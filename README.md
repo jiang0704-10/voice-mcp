@@ -12,7 +12,7 @@ This fork lives at [Yinglianchun/voice-mcp](https://github.com/Yinglianchun/voic
 
 ## What Changed in This Fork
 
-- Added `TTS_PROVIDER` switching between DashScope/CosyVoice and ElevenLabs.
+- Added `TTS_PROVIDER` switching between DashScope/CosyVoice, ElevenLabs, and Moss.
 - Kept the old `speak(text)` call compatible, and extended it to `speak(text, style?, raw_tags?)`.
 - Added ElevenLabs TTS support with configurable model, output format, voice settings, and optional v3 audio tags.
 - Added style-to-tag mapping for ElevenLabs v3, while stripping raw audio tags before DashScope/CosyVoice calls.
@@ -24,7 +24,7 @@ This fork lives at [Yinglianchun/voice-mcp](https://github.com/Yinglianchun/voic
 
 ## Features
 
-- **Custom Voice Cloning** — Use DashScope Qwen-TTS Voice Cloning API or ElevenLabs TTS with your own cloned voice
+- **Custom Voice Cloning** — Use DashScope Qwen-TTS Voice Cloning API, ElevenLabs, or Moss TTS with your own voice
 - **Inline Audio Player** — Beautiful WeChat-style player with waveform visualization
 - **Breathing Visualizer Panel** — Use `/panel` to listen for the latest MCP `speak` output
 - **Transcript Toggle** — Show/hide the spoken text
@@ -59,7 +59,7 @@ npm install
 Set the provider. If omitted, the worker uses DashScope.
 
 ```bash
-npx wrangler secret put TTS_PROVIDER  # dashscope or elevenlabs
+npx wrangler secret put TTS_PROVIDER  # dashscope, elevenlabs, or moss
 ```
 
 #### DashScope / CosyVoice
@@ -107,6 +107,27 @@ npx wrangler secret put ELEVENLABS_SPEED          # Example: 1.20
 `eleven_v3` supports audio tags such as `[whispers]`, `[sighs]`, and `[laughs]`.
 `eleven_multilingual_v2` is a steadier choice for ordinary reading.
 
+#### Moss
+
+Moss uses the existing MCP `speak` tool and inline MP3 player. Configure the API key as a Cloudflare secret; never commit it to the repository.
+
+```bash
+npx wrangler secret put MOSS_API_KEY
+npx wrangler secret put MOSS_VOICE_ID
+```
+
+Optional:
+
+```bash
+npx wrangler secret put MOSS_MODEL  # Default: moss-tts-1.5-flash
+```
+
+Then select Moss:
+
+```bash
+npx wrangler secret put TTS_PROVIDER  # enter: moss
+```
+
 ### 4. Deploy
 
 ```bash
@@ -123,9 +144,12 @@ npx wrangler deploy
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `TTS_PROVIDER` | No | `dashscope` or `elevenlabs`; defaults to `dashscope` |
+| `TTS_PROVIDER` | No | `dashscope`, `elevenlabs`, or `moss`; defaults to `dashscope` |
 | `DASHSCOPE_API_KEY` | DashScope | Your DashScope API key |
 | `VOICE_ID` | DashScope | The cloned voice ID (Qwen-TTS VC) |
+| `MOSS_API_KEY` | Moss | Moss API key; store as a Cloudflare secret |
+| `MOSS_VOICE_ID` | Moss | Moss voice ID |
+| `MOSS_MODEL` | No | Moss TTS model (default: `moss-tts-1.5-flash`) |
 | `BOT_NAME` | No | Display name (default: "AI") |
 | `TTS_MODEL` | No | DashScope TTS model (default: `cosyvoice-v3.5-plus`) |
 | `ELEVENLABS_API_KEY` | ElevenLabs | Your ElevenLabs API key |

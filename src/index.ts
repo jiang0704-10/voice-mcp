@@ -35,10 +35,13 @@ export interface Env {
   ELEVENLABS_STYLE?: string;
   ELEVENLABS_USE_SPEAKER_BOOST?: string;
   ELEVENLABS_SPEED?: string;
+  MOSS_API_KEY?: string;
+  MOSS_VOICE_ID?: string;
+  MOSS_MODEL?: string;
   BOT_NAME?: string;
 }
 
-type TtsProvider = "dashscope" | "elevenlabs";
+type TtsProvider = "dashscope" | "elevenlabs" | "moss";
 type ElevenLabsLanguage = "zh" | "en";
 
 interface SpeakInput {
@@ -2086,7 +2089,14 @@ const ELEVENLABS_V3_STYLE_TAGS: Record<string, string> = {
 };
 
 function getTtsProvider(env: Env): TtsProvider {
-  return env.TTS_PROVIDER?.trim().toLowerCase() === "elevenlabs" ? "elevenlabs" : "dashscope";
+  const provider = env.TTS_PROVIDER?.trim().toLowerCase();
+  if (provider === "elevenlabs") return "elevenlabs";
+  if (provider === "moss") return "moss";
+  return "dashscope";
+}
+
+function getMossModel(env: Env): string {
+  return env.MOSS_MODEL || "moss-tts-1.5-flash";
 }
 
 function getDashScopeModel(env: Env): string {
@@ -2515,6 +2525,62 @@ async function generateDashScopeAudio(env: Env, input: SpeakInput): Promise<Audi
   }
 }
 
+async function generateMossAudio(env: Env, input: SpeakInput): Promise<AudioResult> {
+  try {
+    const apiKey = env.MOSS_API_KEY;
+    const voiceId = env.MOSS_VOICE_ID;
+
+    if (!apiKey) {
+      return { success: false, error: "MOSS_API_KEY is not configured" };
+    }
+    if (!voiceId) {
+      return { success: false, error: "MOSS_VOICE_ID is not configured" };
+    }
+
+    const model = getMossModel(env);
+    const finalText = stripAudioTags(input.text);
+
+    const response = await fetch("https://api.mosi.cn/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        input: finalText,
+        voice_id: voiceId,
+        response_format: "mp3",
+        delivery_method: "audio",
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: `Moss API error ${response.status}: ${errorText}` };
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("audio/")) {
+      const errorText = await response.text();
+      return { success: false, error: `Moss API returned non-audio response: ${errorText}` };
+    }
+
+    const audioBuffer = await response.arrayBuffer();
+    if (!audioBuffer.byteLength) {
+      return { success: false, error: "Moss API returned empty audio" };
+    }
+
+    return {
+      success: true,
+      audio_base64: arrayBufferToBase64(audioBuffer),
+      final_text: finalText,
+    };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 async function generateElevenLabsAudio(env: Env, input: SpeakInput): Promise<AudioResult> {
   try {
     const apiKey = env.ELEVENLABS_API_KEY;
@@ -2746,13 +2812,26 @@ async function fetchElevenLabsHistoryEvent(env: Env, historyItemId: string): Pro
 }
 
 async function generateAudio(env: Env, input: SpeakInput): Promise<AudioResult> {
-  return getTtsProvider(env) === "elevenlabs"
-    ? generateElevenLabsAudio(env, input)
-    : generateDashScopeAudio(env, input);
+  const provider = getTtsProvider(env);
+  if (provider === "elevenlabs") return generateElevenLabsAudio(env, input);
+  if (provider === "moss") return generateMossAudio(env, input);
+  return generateDashScopeAudio(env, input);
 }
 
 function getTtsStatus(env: Env): Record<string, unknown> {
   const provider = getTtsProvider(env);
+
+  if (provider === "moss") {
+    const modelId = getMossModel(env);
+    return {
+      provider,
+      model_id: modelId,
+      model: modelId,
+      voice_id: env.MOSS_VOICE_ID ? "configured" : "not configured",
+      configured: Boolean(env.MOSS_API_KEY && env.MOSS_VOICE_ID),
+      audio_tags_enabled: false,
+    };
+  }
 
   if (provider === "elevenlabs") {
     const modelId = getElevenLabsModel(env);
@@ -2825,7 +2904,11 @@ function createVoiceEvent(env: Env, input: SpeakInput, result: AudioResult): Voi
     audio_base64: result.audio_base64 || "",
     created_at: new Date().toISOString(),
     provider,
-    model_id: provider === "elevenlabs" ? getElevenLabsModel(env) : getDashScopeModel(env),
+    model_id: provider === "elevenlabs"
+      ? getElevenLabsModel(env)
+      : provider === "moss"
+        ? getMossModel(env)
+        : getDashScopeModel(env),
     caption_cues: captionCues.length ? captionCues : undefined,
     style: input.style,
     raw_tags: input.raw_tags,
